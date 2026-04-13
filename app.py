@@ -9,24 +9,72 @@ from tester.tester import create_tester_graph
 from agentstate.agent_state import TestingState
 import psycopg2
 import ssl
-import traceback  # ADDED for better error tracking
-import re  # ADDED for parsing EXPLAIN results
-import matplotlib.pyplot as plt  # ADDED for performance graphs
+import traceback
+import re
+import matplotlib.pyplot as plt
+
+# Add this at the top of app.py after imports
+from auth.login_ui import show_login_page
+
+# Initialize session state for authentication
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+# Set page config FIRST before any other Streamlit commands
+st.set_page_config(page_title="DB Optimizer", layout="wide")
 
 # FIX: Added encoding="utf-8" to prevent Unicode errors
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("app.log", encoding="utf-8"),  # ← FIXED: added encoding
+        logging.FileHandler("app.log", encoding="utf-8"),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
 
-st.set_page_config(page_title="DB Optimizer", layout="wide")
+# ========== AUTHENTICATION HANDLING ==========
 
-# Navigation sidebar - Add this at the very top of sidebar
+# Function to get database config from session or defaults
+def get_db_config():
+    """Get database configuration from session state or return defaults"""
+    if "db_config" in st.session_state:
+        return st.session_state.db_config
+    else:
+        # Return default config for login page
+        return {
+            "host": "ep-divine-scene-anp4baya-pooler.c-6.us-east-1.aws.neon.tech",
+            "port": 5432,
+            "user": "neondb_owner",
+            "password": "npg_vxGP8FcUI7gH",
+            "database": "neondb",
+            "ssl": True,
+            "db_type": "PostgreSQL"
+        }
+
+# Check if user is authenticated
+if not st.session_state["authenticated"]:
+    # Show login page - this will handle authentication
+    # The login page will set authenticated=True and user info in session state
+    show_login_page(get_db_config())
+    st.stop()  # Stop execution, don't show main app
+
+# If authenticated, show the main app
+# Show user info in sidebar
+if st.session_state.get("authenticated"):
+    user = st.session_state.get("user", {})
+    st.sidebar.success(f"✅ Logged in as: {user.get('email', 'User')}")
+    st.sidebar.caption(f"Role: {user.get('role', 'viewer')}")
+    
+    if st.sidebar.button("🚪 Logout"):
+        st.session_state.clear()
+        st.session_state["authenticated"] = False
+        st.rerun()
+
+# ========== MAIN APP CODE ==========
+
+# Navigation sidebar
 st.sidebar.title("Navigation")
 page = st.sidebar.radio(
     "Go to",
@@ -37,6 +85,20 @@ page = st.sidebar.radio(
 if page == "🏠 Home":
     st.title("PostgreSQL Database Optimization Assistant")
 
+# Database configuration (use session state or defaults)
+if "db_config" not in st.session_state:
+    st.session_state.db_config = {
+        "host": "ep-divine-scene-anp4baya-pooler.c-6.us-east-1.aws.neon.tech",
+        "port": 5432,
+        "user": "neondb_owner",
+        "password": "npg_vxGP8FcUI7gH",
+        "database": "neondb",
+        "ssl": True,
+        "db_type": "PostgreSQL"
+    }
+
+db_config = st.session_state.db_config
+
 with st.sidebar:
     if page == "🏠 Home":
         st.header("Database Configuration")
@@ -45,17 +107,32 @@ with st.sidebar:
         db_type = st.selectbox(
             "Database Type",
             ["PostgreSQL", "MySQL", "MongoDB"],
+            index=["PostgreSQL", "MySQL", "MongoDB"].index(db_config.get("db_type", "PostgreSQL")),
             help="Select your database type"
         )
         
-        db_host = st.text_input("Host", value="ep-divine-scene-anp4baya-pooler.c-6.us-east-1.aws.neon.tech")
-        db_port = st.number_input("Port", value=5432, min_value=1, max_value=65535)
-        db_user = st.text_input("Username", value="neondb_owner")
-        db_password = st.text_input("Password", type="password", value="npg_vxGP8FcUI7gH")
-        db_name = st.text_input("Database Name", value="neondb")
+        db_host = st.text_input("Host", value=db_config.get("host", "ep-divine-scene-anp4baya-pooler.c-6.us-east-1.aws.neon.tech"))
+        db_port = st.number_input("Port", value=db_config.get("port", 5432), min_value=1, max_value=65535)
+        db_user = st.text_input("Username", value=db_config.get("user", "neondb_owner"))
+        db_password = st.text_input("Password", type="password", value=db_config.get("password", "npg_vxGP8FcUI7gH"))
+        db_name = st.text_input("Database Name", value=db_config.get("database", "neondb"))
         
         # Add SSL toggle for Neon (only for PostgreSQL)
-        use_ssl = st.checkbox("Enable SSL (required for Neon)", value=True)
+        use_ssl = st.checkbox("Enable SSL (required for Neon)", value=db_config.get("ssl", True))
+        
+        # Update button
+        if st.button("Update Configuration", width="stretch"):
+            st.session_state.db_config = {
+                "host": db_host,
+                "port": db_port,
+                "user": db_user,
+                "password": db_password,
+                "database": db_name,
+                "ssl": use_ssl,
+                "db_type": db_type
+            }
+            st.success("Configuration updated!")
+            st.rerun()
         
         test_connection = st.button("Test Connection", width="stretch")
         
@@ -110,16 +187,6 @@ with st.sidebar:
     elif page == "⚙️ Settings":
         st.header("Settings")
         st.info("Application settings and preferences")
-
-db_config = {
-    "host": db_host if 'db_host' in locals() else "ep-divine-scene-anp4baya-pooler.c-6.us-east-1.aws.neon.tech",
-    "port": db_port if 'db_port' in locals() else 5432,
-    "user": db_user if 'db_user' in locals() else "neondb_owner",
-    "password": db_password if 'db_password' in locals() else "npg_vxGP8FcUI7gH",
-    "database": db_name if 'db_name' in locals() else "neondb",
-    "ssl": use_ssl if 'use_ssl' in locals() else True,  # Add SSL flag
-    "db_type": db_type if 'db_type' in locals() else "PostgreSQL"  # Add database type
-}
 
 def get_db_adapter(db_type: str, config: Dict):
     """Get the appropriate database adapter based on type"""
@@ -237,19 +304,19 @@ if "analysis_history" not in st.session_state:
 if "test_results" not in st.session_state:
     st.session_state.test_results = None
 if "explain_results" not in st.session_state:
-    st.session_state.explain_results = None  # ADDED for storing EXPLAIN results
+    st.session_state.explain_results = None
 if "index_suggestions" not in st.session_state:
-    st.session_state.index_suggestions = None  # ADDED for storing index suggestions
+    st.session_state.index_suggestions = None
 if "performance_metrics" not in st.session_state:
-    st.session_state.performance_metrics = None  # ADDED for storing performance metrics
+    st.session_state.performance_metrics = None
 if "llm" not in st.session_state:
-    st.session_state.llm = None  # ADDED for storing LLM instance
+    st.session_state.llm = None
 if "alert_manager" not in st.session_state:
-    st.session_state.alert_manager = None  # ADDED for storing AlertManager instance
+    st.session_state.alert_manager = None
 if "monitoring_started" not in st.session_state:
-    st.session_state.monitoring_started = False  # ADDED to track monitoring status
+    st.session_state.monitoring_started = False
 if "db_adapter" not in st.session_state:
-    st.session_state.db_adapter = None  # ADDED for storing database adapter
+    st.session_state.db_adapter = None
 
 def initialize_agent():
     try:
@@ -273,7 +340,7 @@ def initialize_llm():
         llm = ChatOpenAI(
             model="gpt-3.5-turbo",
             temperature=0,
-            api_key=st.secrets.get("OPENAI_API_KEY", "")  # Use secrets or env var
+            api_key=st.secrets.get("OPENAI_API_KEY", "")
         )
         return llm
     except Exception as e:
@@ -406,7 +473,7 @@ def run_analysis():
                 stream_mode="values"
             ):
                 if "analysis" in event:
-                    # FIX #2: DEBUG LLM OUTPUT - Show raw AI response
+                    # Show raw AI output for debugging
                     st.write("**🔍 RAW LLM OUTPUT:**")
                     st.code(event["analysis"], language="markdown")
                     st.divider()
@@ -426,7 +493,7 @@ def run_analysis():
                     status.write(f"Analysis iteration {len(st.session_state.analysis_history)} completed")
                     logger.info(f"New analysis generated: {event['analysis'][:50]}...")
                 
-                # STEP 4: Extract and store EXPLAIN ANALYZE results if present (PostgreSQL only)
+                # Extract and store EXPLAIN ANALYZE results if present (PostgreSQL only)
                 if "mrk_down" in event and db_config["db_type"] == "PostgreSQL":
                     # Look for EXPLAIN ANALYZE section in the markdown
                     explain_section_match = re.search(
@@ -451,7 +518,7 @@ def run_analysis():
             st.success("✅ Optimization analysis completed successfully!")
             
         except Exception as e:
-            # FIX #1: ERROR VISIBILITY - Show full traceback
+            # Show full error traceback for debugging
             st.error(f"❌ Analysis pipeline failed: {str(e)}")
             st.error("**Full error traceback:**")
             st.code(traceback.format_exc(), language="python")
@@ -465,7 +532,7 @@ def display_analysis():
 
     latest = st.session_state.analysis_history[-1]
     
-    # STEP 4 & 5: Display Performance Analysis Section with Graphs
+    # Display Performance Analysis Section with Graphs
     st.subheader("⚡ Performance Analysis")
     
     # Display performance metrics with graphs if available
@@ -483,7 +550,7 @@ def display_analysis():
                      delta=f"{metrics['improvement']:.1f}%" if metrics['improvement'] else None,
                      delta_color=improvement_color)
         
-        # STEP 5: Add Performance Graph
+        # Add Performance Graph
         if metrics['before_time'] and metrics['after_time']:
             st.markdown("### 📊 Performance Comparison Chart")
             
@@ -516,7 +583,7 @@ def display_analysis():
                        bbox=dict(boxstyle="round,pad=0.3", facecolor="red", alpha=0.7))
             
             st.pyplot(fig)
-            plt.close(fig)  # Close figure to free memory
+            plt.close(fig)
             
             # Display applied indexes
             if metrics.get('indexes_applied') and len(metrics['indexes_applied']) > 0:
@@ -774,7 +841,7 @@ def execute_queries():
     current_analysis = st.session_state.analysis_history[-1]
     sql_queries = extract_sql_queries(current_analysis)
     
-    # FIX #3: NO SQL QUERIES FOUND - Fallback to raw output
+    # Fallback to raw output if no SQL queries found
     if not sql_queries:
         st.warning("⚠️ No SQL queries found in the analysis — using raw output as fallback")
         sql_queries = current_analysis
@@ -843,7 +910,7 @@ def execute_queries():
                                 if result:
                                     st.success(f"✅ Query {i} executed successfully - {len(result)} rows returned")
                                     with st.expander(f"View Query {i} Results"):
-                                        st.json(result[:10])  # Show first 10 rows
+                                        st.json(result[:10])
                                         if len(result) > 10:
                                             st.info(f"Showing first 10 of {len(result)} rows")
                                 else:
@@ -892,7 +959,7 @@ if st.session_state.alert_manager and st.session_state.alert_manager.get_active_
     st.sidebar.subheader("🚨 Active Alerts")
     
     active_alerts = st.session_state.alert_manager.get_active_alerts()
-    for alert in active_alerts[:3]:  # Show top 3 alerts
+    for alert in active_alerts[:3]:
         with st.sidebar.expander(f"{alert['severity'].upper()}: {alert['title']}"):
             st.caption(alert['message'])
             st.caption(f"Predicted: {alert['predicted_issue']}")
@@ -927,9 +994,9 @@ if page == "🏠 Home":
         if st.button("🔄 Clear History", width="stretch"):
             st.session_state.analysis_history = []
             st.session_state.test_results = None
-            st.session_state.explain_results = None  # Clear EXPLAIN results too
-            st.session_state.index_suggestions = None  # Clear index suggestions
-            st.session_state.performance_metrics = None  # Clear performance metrics
+            st.session_state.explain_results = None
+            st.session_state.index_suggestions = None
+            st.session_state.performance_metrics = None
             st.success("Analysis history cleared!")
             st.rerun()
 
@@ -985,7 +1052,7 @@ if page == "🏠 Home":
                                     'execution_time': st.session_state.performance_metrics.get('after_time', 'N/A'),
                                     'improvement': st.session_state.performance_metrics.get('improvement', 0),
                                     'scan_type': 'Index Scan' if st.session_state.performance_metrics.get('improvement', 0) > 0 else 'Seq Scan',
-                                    'rows_examined': 1000  # Default value, can be extracted from EXPLAIN
+                                    'rows_examined': 1000
                                 }
                             else:
                                 metrics = {
@@ -1098,7 +1165,6 @@ elif page == "⚙️ Settings":
     openai_api_key = st.text_input("OpenAI API Key", type="password", 
                                    help="Enter your OpenAI API key for NLP features")
     if openai_api_key:
-        # In production, use proper secrets management
         st.session_state['openai_api_key'] = openai_api_key
         st.success("✅ API key saved for this session!")
     
@@ -1151,7 +1217,6 @@ elif page == "⚙️ Settings":
     with col2:
         if st.button("🔄 Reset to Defaults", width="stretch"):
             st.warning("Settings reset to defaults")
-            # Clear settings from session state
             if 'settings' in st.session_state:
                 del st.session_state.settings
             st.rerun()
