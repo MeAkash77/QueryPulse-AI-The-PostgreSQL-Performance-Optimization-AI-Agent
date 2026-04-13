@@ -17,7 +17,7 @@ class AuthSystem:
         try:
             agent = SQLAgent(self.db_config)
             
-            # Create users table if not exists - don't drop!
+            # Create users table if not exists
             agent.execute_query("""
                 CREATE TABLE IF NOT EXISTS users (
                     id SERIAL PRIMARY KEY,
@@ -47,7 +47,11 @@ class AuthSystem:
                 """, ("admin@example.com", "Administrator", password_hash, salt))
                 print("✅ Admin user created (admin@example.com / admin123)")
             else:
-                print("✅ Admin user already exists")
+                # Ensure existing admin has correct role
+                agent.execute_query("""
+                    UPDATE users SET role = 'admin' WHERE email = 'admin@example.com'
+                """)
+                print("✅ Admin user verified")
             
             return True
         except Exception as e:
