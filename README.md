@@ -1,4 +1,4 @@
-# QueryPulse-AI: Real-Time Database Performance Analyzer for PostgreSQL 🚀
+# QueryPulse-AI-The-PostgreSQL-Performance-Optimization-AI-Agent 🚀
 
 QueryPulse-AI is an intelligent, AI-powered database performance optimization system that combines Large Language Models (LLMs) with automated testing, predictive analytics, and real-time monitoring to help developers and DBAs optimize PostgreSQL databases. The system automatically analyzes schemas, identifies performance bottlenecks, suggests and creates optimal indexes, and provides natural language explanations of complex database issues.
 
