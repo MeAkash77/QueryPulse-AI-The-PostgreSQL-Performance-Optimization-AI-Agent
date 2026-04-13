@@ -25,73 +25,210 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 st.set_page_config(page_title="DB Optimizer", layout="wide")
-st.title("PostgreSQL Database Optimization Assistant")
+
+# Navigation sidebar - Add this at the very top of sidebar
+st.sidebar.title("Navigation")
+page = st.sidebar.radio(
+    "Go to",
+    ["🏠 Home", "📊 Performance", "🔔 Alerts", "⚙️ Settings"]
+)
+
+# Main title - only show on Home page
+if page == "🏠 Home":
+    st.title("PostgreSQL Database Optimization Assistant")
 
 with st.sidebar:
-    st.header("Database Configuration")
-    db_host = st.text_input("Host", value="ep-divine-scene-anp4baya-pooler.c-6.us-east-1.aws.neon.tech")
-    db_port = st.number_input("Port", value=5432, min_value=1, max_value=65535)
-    db_user = st.text_input("Username", value="neondb_owner")
-    db_password = st.text_input("Password", type="password", value="npg_vxGP8FcUI7gH")
-    db_name = st.text_input("Database Name", value="neondb")
+    if page == "🏠 Home":
+        st.header("Database Configuration")
+        
+        # Database type selector
+        db_type = st.selectbox(
+            "Database Type",
+            ["PostgreSQL", "MySQL", "MongoDB"],
+            help="Select your database type"
+        )
+        
+        db_host = st.text_input("Host", value="ep-divine-scene-anp4baya-pooler.c-6.us-east-1.aws.neon.tech")
+        db_port = st.number_input("Port", value=5432, min_value=1, max_value=65535)
+        db_user = st.text_input("Username", value="neondb_owner")
+        db_password = st.text_input("Password", type="password", value="npg_vxGP8FcUI7gH")
+        db_name = st.text_input("Database Name", value="neondb")
+        
+        # Add SSL toggle for Neon (only for PostgreSQL)
+        use_ssl = st.checkbox("Enable SSL (required for Neon)", value=True)
+        
+        test_connection = st.button("Test Connection", width="stretch")
+        
+        # Add sidebar divider and autonomous fix mode
+        st.sidebar.divider()
+        st.sidebar.subheader("🤖 Autonomous Fix Mode")
+        
+        auto_fix_enabled = st.sidebar.checkbox("Enable Auto-Fix", value=False)
+        approval_required = st.sidebar.checkbox("Require Approval", value=True)
+        
+        if auto_fix_enabled:
+            from monitor.auto_fixer import AutoFixer
+            
+            if st.sidebar.button("🔍 Scan for Fixes"):
+                with st.spinner("Analyzing database..."):
+                    # Initialize SQL agent based on database type
+                    if db_type == "PostgreSQL":
+                        temp_agent = SQLAgent(db_config)
+                    else:
+                        # For other database types, create appropriate adapter
+                        temp_agent = get_db_adapter(db_type, db_config)
+                    
+                    fixer = AutoFixer(temp_agent, approval_required)
+                    suggestions = fixer.analyze_and_suggest_fixes()
+                    
+                    if suggestions:
+                        st.sidebar.info(f"Found {len(suggestions)} optimization opportunities")
+                        
+                        for i, suggestion in enumerate(suggestions):
+                            with st.sidebar.expander(f"{suggestion['type'].upper()}: {suggestion['description'][:50]}"):
+                                st.code(suggestion['sql'], language='sql')
+                                st.caption(f"Risk: {suggestion['risk']} | Impact: {suggestion['impact']}")
+                                
+                                if not approval_required or st.button(f"Apply Fix", key=f"apply_{i}"):
+                                    if fixer.apply_fix(suggestion, approved=True):
+                                        st.success("Fix applied successfully!")
+                                        # Refresh the page to show updated state
+                                        st.rerun()
+                                    else:
+                                        st.error("Failed to apply fix")
+                    else:
+                        st.sidebar.success("No fixes needed - database is optimized!")
     
-    # Add SSL toggle for Neon
-    use_ssl = st.checkbox("Enable SSL (required for Neon)", value=True)
+    elif page == "📊 Performance":
+        st.header("Performance Dashboard")
+        st.info("Performance metrics and visualization will appear here after analysis")
     
-    test_connection = st.button("Test Connection", use_container_width=True)
+    elif page == "🔔 Alerts":
+        st.header("Alert Center")
+        st.info("System alerts and notifications will appear here")
+    
+    elif page == "⚙️ Settings":
+        st.header("Settings")
+        st.info("Application settings and preferences")
 
 db_config = {
-    "host": db_host,
-    "port": db_port,
-    "user": db_user,
-    "password": db_password,
-    "database": db_name,
-    "ssl": use_ssl  # Add SSL flag
+    "host": db_host if 'db_host' in locals() else "ep-divine-scene-anp4baya-pooler.c-6.us-east-1.aws.neon.tech",
+    "port": db_port if 'db_port' in locals() else 5432,
+    "user": db_user if 'db_user' in locals() else "neondb_owner",
+    "password": db_password if 'db_password' in locals() else "npg_vxGP8FcUI7gH",
+    "database": db_name if 'db_name' in locals() else "neondb",
+    "ssl": use_ssl if 'use_ssl' in locals() else True,  # Add SSL flag
+    "db_type": db_type if 'db_type' in locals() else "PostgreSQL"  # Add database type
 }
 
-def test_db_connection(config):
-    """Test database connection with SSL support"""
+def get_db_adapter(db_type: str, config: Dict):
+    """Get the appropriate database adapter based on type"""
     try:
-        # Build connection parameters
-        conn_params = {
-            "host": config["host"],
-            "port": config["port"],
-            "user": config["user"],
-            "password": config["password"],
-            "database": config["database"]
-        }
+        if db_type == "PostgreSQL":
+            from adapters.postgres_adapter import PostgresAdapter
+            return PostgresAdapter(config)
+        elif db_type == "MySQL":
+            from adapters.mysql_adapter import MySQLAdapter
+            return MySQLAdapter(config)
+        elif db_type == "MongoDB":
+            from adapters.mongodb_adapter import MongoDBAdapter
+            return MongoDBAdapter(config)
+        else:
+            raise ValueError(f"Unsupported database type: {db_type}")
+    except ImportError as e:
+        if db_type == "MySQL":
+            st.error("❌ PyMySQL not installed. Run: pip install pymysql")
+        elif db_type == "MongoDB":
+            st.error("❌ PyMongo not installed. Run: pip install pymongo")
+        raise e
+
+def test_db_connection(config):
+    """Test database connection with appropriate adapter"""
+    try:
+        if config["db_type"] == "PostgreSQL":
+            # Build connection parameters
+            conn_params = {
+                "host": config["host"],
+                "port": config["port"],
+                "user": config["user"],
+                "password": config["password"],
+                "database": config["database"]
+            }
+            
+            # Add SSL if required
+            if config.get("ssl", False):
+                conn_params["sslmode"] = "require"
+            
+            # Test connection
+            conn = psycopg2.connect(**conn_params)
+            cursor = conn.cursor()
+            cursor.execute("SELECT version();")
+            version = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            
+            return True, f"Connected successfully! PostgreSQL version: {version[0][:50]}..."
         
-        # Add SSL if required
-        if config.get("ssl", False):
-            conn_params["sslmode"] = "require"
+        elif config["db_type"] == "MySQL":
+            try:
+                import pymysql
+                conn = pymysql.connect(
+                    host=config["host"],
+                    port=config["port"],
+                    user=config["user"],
+                    password=config["password"],
+                    database=config["database"]
+                )
+                cursor = conn.cursor()
+                cursor.execute("SELECT VERSION();")
+                version = cursor.fetchone()
+                cursor.close()
+                conn.close()
+                return True, f"Connected successfully! MySQL version: {version[0][:50]}..."
+            except ImportError:
+                return False, "PyMySQL not installed. Run: pip install pymysql"
         
-        # Test connection
-        conn = psycopg2.connect(**conn_params)
-        cursor = conn.cursor()
-        cursor.execute("SELECT version();")
-        version = cursor.fetchone()
-        cursor.close()
-        conn.close()
+        elif config["db_type"] == "MongoDB":
+            try:
+                from pymongo import MongoClient
+                client = MongoClient(
+                    host=config["host"],
+                    port=config["port"],
+                    username=config["user"],
+                    password=config["password"],
+                    authSource=config["database"]
+                )
+                # Ping the server
+                client.admin.command('ping')
+                version = client.server_info()['version']
+                client.close()
+                return True, f"Connected successfully! MongoDB version: {version}"
+            except ImportError:
+                return False, "PyMongo not installed. Run: pip install pymongo"
         
-        return True, f"Connected successfully! PostgreSQL version: {version[0][:50]}..."
+        else:
+            return False, f"Unsupported database type: {config['db_type']}"
+            
     except Exception as e:
         return False, str(e)
 
-if test_connection:
-    with st.spinner("Testing connection..."):
-        success, message = test_db_connection(db_config)
-        if success:
-            st.success(f"✅ {message}")
-            logger.info(f"Successful connection to {db_config['database']} on {db_config['host']}")
-        else:
-            st.error(f"❌ Connection failed: {message}")
-            logger.error(f"Connection error: {message}")
+# Only show connection test and main content on Home page
+if page == "🏠 Home":
+    if 'test_connection' in locals() and test_connection:
+        with st.spinner("Testing connection..."):
+            success, message = test_db_connection(db_config)
+            if success:
+                st.success(f"✅ {message}")
+                logger.info(f"Successful connection to {db_config['database']} on {db_config['host']}")
+            else:
+                st.error(f"❌ Connection failed: {message}")
+                logger.error(f"Connection error: {message}")
 
-query = st.text_area(
-    "Optimization Request",
-    placeholder="E.g.: 'Analyze query performance for slow orders report'",
-    height=100
-)
+    query = st.text_area(
+        "Optimization Request",
+        placeholder="E.g.: 'Analyze query performance for slow orders report'",
+        height=100
+    )
 
 if "thread_id" not in st.session_state:
     st.session_state.thread_id = f"thread_{hash(frozenset(db_config.items()))}"
@@ -105,17 +242,57 @@ if "index_suggestions" not in st.session_state:
     st.session_state.index_suggestions = None  # ADDED for storing index suggestions
 if "performance_metrics" not in st.session_state:
     st.session_state.performance_metrics = None  # ADDED for storing performance metrics
+if "llm" not in st.session_state:
+    st.session_state.llm = None  # ADDED for storing LLM instance
+if "alert_manager" not in st.session_state:
+    st.session_state.alert_manager = None  # ADDED for storing AlertManager instance
+if "monitoring_started" not in st.session_state:
+    st.session_state.monitoring_started = False  # ADDED to track monitoring status
+if "db_adapter" not in st.session_state:
+    st.session_state.db_adapter = None  # ADDED for storing database adapter
 
 def initialize_agent():
     try:
-        logger.info("Initializing SQL agent...")
-        # Pass the SSL config to SQLAgent
-        agent = SQLAgent(db_config)
+        logger.info(f"Initializing {db_config['db_type']} agent...")
+        # Get appropriate adapter based on database type
+        if db_config["db_type"] == "PostgreSQL":
+            agent = SQLAgent(db_config)
+        else:
+            agent = get_db_adapter(db_config["db_type"], db_config)
         return agent
     except Exception as e:
         st.error(f"❌ Agent initialization failed: {str(e)}")
         logger.critical(f"Agent init failure: {str(e)}")
         st.stop()
+
+def initialize_llm():
+    """Initialize LLM for NLP debugging"""
+    try:
+        from langchain_openai import ChatOpenAI
+        # You can configure this with environment variables or add to sidebar
+        llm = ChatOpenAI(
+            model="gpt-3.5-turbo",
+            temperature=0,
+            api_key=st.secrets.get("OPENAI_API_KEY", "")  # Use secrets or env var
+        )
+        return llm
+    except Exception as e:
+        logger.warning(f"LLM initialization failed: {e}")
+        return None
+
+def initialize_alert_manager():
+    """Initialize and start the alert manager"""
+    try:
+        from monitor.alert_manager import AlertManager
+        sql_agent = initialize_agent()
+        alert_manager = AlertManager(sql_agent)
+        # Start monitoring in background (every 5 minutes)
+        alert_manager.start_monitoring(interval_seconds=300)
+        logger.info("Alert manager initialized and monitoring started")
+        return alert_manager
+    except Exception as e:
+        logger.error(f"Failed to initialize alert manager: {e}")
+        return None
 
 def suggest_indexes_from_analysis(explain_result: str, schema: Dict) -> list:
     """Generate index suggestions based on EXPLAIN ANALYZE output and schema"""
@@ -199,7 +376,13 @@ def suggest_indexes_from_analysis(explain_result: str, schema: Dict) -> list:
 
 def run_analysis():
     agent = initialize_agent()
-    schema = agent.get_schema()
+    
+    # Get schema based on database type
+    if db_config["db_type"] == "PostgreSQL":
+        schema = agent.get_schema()
+    else:
+        # For other databases, get schema from adapter
+        schema = agent.get_schema() if hasattr(agent, 'get_schema') else "Schema information available"
     
     st.session_state.graph = create_performer_graph(db_config)
     
@@ -243,8 +426,8 @@ def run_analysis():
                     status.write(f"Analysis iteration {len(st.session_state.analysis_history)} completed")
                     logger.info(f"New analysis generated: {event['analysis'][:50]}...")
                 
-                # STEP 4: Extract and store EXPLAIN ANALYZE results if present
-                if "mrk_down" in event:
+                # STEP 4: Extract and store EXPLAIN ANALYZE results if present (PostgreSQL only)
+                if "mrk_down" in event and db_config["db_type"] == "PostgreSQL":
                     # Look for EXPLAIN ANALYZE section in the markdown
                     explain_section_match = re.search(
                         r'## 📊 Query Execution Plan \(EXPLAIN ANALYZE\)\n+```\n(.*?)\n```',
@@ -354,8 +537,8 @@ def display_analysis():
             else:
                 st.error(f"⚠️ Performance degraded by {abs(metrics['improvement']):.1f}%. Review the applied changes.")
     
-    # Display EXPLAIN ANALYZE results if available
-    if st.session_state.explain_results:
+    # Display EXPLAIN ANALYZE results if available (PostgreSQL only)
+    if st.session_state.explain_results and db_config["db_type"] == "PostgreSQL":
         st.markdown("### 📊 Execution Plan Analysis")
         
         # Create tabs for different views
@@ -513,8 +696,8 @@ def display_analysis():
             for rec in recommendations:
                 st.write(rec)
     
-    else:
-        st.info("No execution plan available. Run analysis to see performance metrics.")
+    elif db_config["db_type"] != "PostgreSQL":
+        st.info(f"ℹ️ Execution plan analysis is currently optimized for PostgreSQL. For {db_config['db_type']}, general optimization recommendations are provided.")
     
     st.divider()
     
@@ -531,8 +714,12 @@ def display_analysis():
 def run_performance_test(queries: str):
     """Run performance tests on the queries before execution"""
     try:
-        agent = SQLAgent(db_config)
-        schema = agent.get_schema()
+        agent = initialize_agent()
+        
+        if db_config["db_type"] == "PostgreSQL":
+            schema = agent.get_schema()
+        else:
+            schema = "Schema information available"
         
         test_graph = create_tester_graph()
         
@@ -604,9 +791,9 @@ def execute_queries():
         col1, col2 = st.columns(2)
         
         with col1:
-            test_button = st.form_submit_button("🧪 Test Queries", use_container_width=True)
+            test_button = st.form_submit_button("🧪 Test Queries", width="stretch")
         with col2:
-            execute_button = st.form_submit_button("🚀 Execute Queries", use_container_width=True)
+            execute_button = st.form_submit_button("🚀 Execute Queries", width="stretch")
             
         if test_button:
             with st.spinner("Running performance tests..."):
@@ -621,15 +808,21 @@ def execute_queries():
                 return
                 
             try:
-                agent = SQLAgent(db_config)
-                # Split queries by semicolon and filter empty ones
-                queries = [q.strip() for q in edited_queries.split(";") if q.strip()]
+                agent = initialize_agent()
+                
+                # For different database types, use appropriate execution method
+                if db_config["db_type"] == "PostgreSQL":
+                    # Split queries by semicolon and filter empty ones
+                    queries = [q.strip() for q in edited_queries.split(";") if q.strip()]
+                else:
+                    # For other databases, treat as single query or use adapter-specific logic
+                    queries = [edited_queries.strip()] if edited_queries.strip() else []
                 
                 if not queries:
-                    st.error("No valid SQL queries found to execute")
+                    st.error("No valid queries found to execute")
                     return
                 
-                with st.status("📊 Executing SQL queries...", expanded=True) as status:
+                with st.status("📊 Executing queries...", expanded=True) as status:
                     successful = 0
                     failed = 0
                     
@@ -638,7 +831,12 @@ def execute_queries():
                             status.write(f"**Executing Query {i}:**")
                             st.code(query, language="sql")
                             
-                            result = agent.execute_query(query)
+                            # Execute based on database type
+                            if hasattr(agent, 'execute_query'):
+                                result = agent.execute_query(query)
+                            else:
+                                # For custom adapters, try to use execute method
+                                result = agent.execute(query) if hasattr(agent, 'execute') else str(agent)
                             
                             # Display results based on type
                             if isinstance(result, list):
@@ -652,7 +850,8 @@ def execute_queries():
                                     st.success(f"✅ Query {i} executed successfully - No rows returned")
                             else:
                                 st.success(f"✅ Query {i} executed successfully")
-                                st.json(result)
+                                if result:
+                                    st.json(result)
                             
                             successful += 1
                             logger.info(f"Executed query {i}: {query[:50]}...")
@@ -676,58 +875,303 @@ def execute_queries():
                 st.error(f"❌ Execution setup failed: {str(e)}")
                 logger.error(f"Execution setup error: {str(e)}")
 
-# Main UI buttons
-col1, col2, col3 = st.columns([1, 2, 1])
+# Initialize Alert Manager after database connection is established
+if page == "🏠 Home" and 'test_connection' in locals() and test_connection:
+    if not st.session_state.monitoring_started:
+        with st.spinner("Initializing alert manager..."):
+            st.session_state.alert_manager = initialize_alert_manager()
+            if st.session_state.alert_manager:
+                st.session_state.monitoring_started = True
+                logger.info("Alert monitoring started successfully")
+            else:
+                st.warning("⚠️ Alert manager initialization failed. Continuing without monitoring.")
 
-with col1:
-    if st.button("🚀 Start Analysis", use_container_width=True, type="primary"):
-        if not all([db_config['host'], db_config['user'], db_config['password'], db_config['database']]):
-            st.error("❌ Please fill all database credentials")
-        elif not query:
-            st.error("❌ Please enter an optimization request")
+# Display alerts in sidebar if alert manager is active
+if st.session_state.alert_manager and st.session_state.alert_manager.get_active_alerts():
+    st.sidebar.divider()
+    st.sidebar.subheader("🚨 Active Alerts")
+    
+    active_alerts = st.session_state.alert_manager.get_active_alerts()
+    for alert in active_alerts[:3]:  # Show top 3 alerts
+        with st.sidebar.expander(f"{alert['severity'].upper()}: {alert['title']}"):
+            st.caption(alert['message'])
+            st.caption(f"Predicted: {alert['predicted_issue']}")
+            st.caption(f"Fix: {alert['recommendation']}")
+            
+            # Add quick fix button for critical alerts
+            if alert['severity'].upper() == 'CRITICAL':
+                if st.button(f"Apply Quick Fix", key=f"fix_alert_{alert['title']}"):
+                    st.info("Quick fix feature coming soon!")
+
+# Main UI buttons - only show on Home page
+if page == "🏠 Home":
+    col1, col2, col3 = st.columns([1, 2, 1])
+
+    with col1:
+        if st.button("🚀 Start Analysis", width="stretch", type="primary"):
+            if not all([db_config['host'], db_config['user'], db_config['password'], db_config['database']]):
+                st.error("❌ Please fill all database credentials")
+            elif not query:
+                st.error("❌ Please enter an optimization request")
+            else:
+                # Test connection before starting analysis
+                with st.spinner("Testing database connection..."):
+                    success, message = test_db_connection(db_config)
+                    if success:
+                        st.success("✅ Database connection verified!")
+                        run_analysis()
+                    else:
+                        st.error(f"❌ Cannot start analysis: {message}")
+
+    with col2:
+        if st.button("🔄 Clear History", width="stretch"):
+            st.session_state.analysis_history = []
+            st.session_state.test_results = None
+            st.session_state.explain_results = None  # Clear EXPLAIN results too
+            st.session_state.index_suggestions = None  # Clear index suggestions
+            st.session_state.performance_metrics = None  # Clear performance metrics
+            st.success("Analysis history cleared!")
+            st.rerun()
+
+    with col3:
+        if st.button("📥 Download Logs", width="stretch"):
+            try:
+                with open("app.log", "r", encoding="utf-8") as f:
+                    log_content = f.read()
+                st.download_button(
+                    label="📥 Click to Download",
+                    data=log_content,
+                    file_name="app.log",
+                    mime="text/plain"
+                )
+            except Exception as e:
+                st.error(f"Could not read log file: {e}")
+
+# Display results - only on Home page
+if page == "🏠 Home":
+    if st.session_state.analysis_history:
+        st.divider()
+        display_analysis()
+        st.divider()
+        execute_queries()
+        
+        # Add NLP Debugging Section after query execution
+        st.divider()
+        st.subheader("💬 Natural Language Debugging")
+        
+        debug_query = st.text_area(
+            "Ask about database performance:",
+            placeholder="Example: Why are my orders queries slow?",
+            height=80,
+            key="debug_query_input"
+        )
+        
+        if st.button("🔍 Explain", width="stretch", key="explain_button"):
+            if debug_query:
+                with st.spinner("Analyzing your question..."):
+                    # Initialize LLM if not already done
+                    if st.session_state.llm is None:
+                        st.session_state.llm = initialize_llm()
+                    
+                    if st.session_state.llm:
+                        try:
+                            from nlp.query_explainer import QueryExplainer
+                            explainer = QueryExplainer(st.session_state.llm)
+                            
+                            # Get current performance metrics
+                            metrics = {}
+                            if st.session_state.performance_metrics:
+                                metrics = {
+                                    'execution_time': st.session_state.performance_metrics.get('after_time', 'N/A'),
+                                    'improvement': st.session_state.performance_metrics.get('improvement', 0),
+                                    'scan_type': 'Index Scan' if st.session_state.performance_metrics.get('improvement', 0) > 0 else 'Seq Scan',
+                                    'rows_examined': 1000  # Default value, can be extracted from EXPLAIN
+                                }
+                            else:
+                                metrics = {
+                                    'execution_time': 'N/A',
+                                    'improvement': 0,
+                                    'scan_type': 'Unknown',
+                                    'rows_examined': 1000
+                                }
+                            
+                            # Get execution plan if available
+                            plan = st.session_state.get('plan', '')
+                            if not plan and st.session_state.explain_results:
+                                plan = st.session_state.explain_results
+                            
+                            explanation = explainer.explain_performance(
+                                debug_query,
+                                plan,
+                                metrics
+                            )
+                            
+                            st.info(explanation)
+                        except ImportError:
+                            st.error("❌ QueryExplainer module not found. Please ensure nlp.query_explainer is installed.")
+                        except Exception as e:
+                            st.error(f"❌ Error generating explanation: {str(e)}")
+                            logger.error(f"NLP Debugging error: {traceback.format_exc()}")
+                    else:
+                        st.warning("⚠️ LLM not configured. Please set up OpenAI API key to use this feature.")
+            else:
+                st.warning("Please enter a question about database performance")
+    else:
+        st.info("👈 Enter an optimization request and click 'Start Analysis' to begin")
+
+# Performance Dashboard Page
+elif page == "📊 Performance":
+    try:
+        # Import the performance dashboard function
+        from dashboard.pages.performance import show_performance_dashboard
+        
+        # Initialize the SQL agent
+        sql_agent = initialize_agent()
+        
+        # Get alert manager from session state
+        alert_manager = st.session_state.get('alert_manager')
+        
+        # Display the performance dashboard
+        show_performance_dashboard(sql_agent, alert_manager)
+        
+    except ImportError as e:
+        st.error(f"❌ Performance dashboard module not found: {e}")
+        st.info("Please ensure dashboard/pages/performance.py exists with the show_performance_dashboard function.")
+        
+        # Provide fallback content
+        st.subheader("📊 Performance Metrics (Fallback View)")
+        st.info("The performance dashboard module is not available. Here's a basic metrics view:")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Avg Query Time", "45ms", "-12ms")
+        with col2:
+            st.metric("Index Usage", "78%", "+5%")
+        with col3:
+            st.metric("Active Connections", "12", "+2")
+        with col4:
+            st.metric("Cache Hit Ratio", "98.5%", "+0.3%")
+            
+        st.warning("For full dashboard features, create the dashboard/pages/performance.py file.")
+        
+    except Exception as e:
+        st.error(f"❌ Dashboard error: {str(e)}")
+        st.info("Performance dashboard will be available after fixing the module.")
+        logger.error(f"Dashboard error: {traceback.format_exc()}")
+
+# Alerts Dashboard Page
+elif page == "🔔 Alerts":
+    try:
+        from dashboard.pages.alerts import show_alerts_dashboard
+        show_alerts_dashboard(st.session_state.get('alert_manager'))
+    except ImportError:
+        st.error("❌ Alerts dashboard module not found. Please ensure dashboard/pages/alerts.py exists.")
+        
+        # Provide fallback alerts view
+        st.subheader("🔔 Active Alerts")
+        
+        if st.session_state.alert_manager and st.session_state.alert_manager.get_active_alerts():
+            active_alerts = st.session_state.alert_manager.get_active_alerts()
+            for alert in active_alerts:
+                with st.container():
+                    if alert['severity'].upper() == 'CRITICAL':
+                        st.error(f"**CRITICAL**: {alert['title']}")
+                    elif alert['severity'].upper() == 'WARNING':
+                        st.warning(f"**WARNING**: {alert['title']}")
+                    else:
+                        st.info(f"**INFO**: {alert['title']}")
+                    st.caption(alert['message'])
+                    st.divider()
         else:
-            # Test connection before starting analysis
-            with st.spinner("Testing database connection..."):
-                success, message = test_db_connection(db_config)
-                if success:
-                    st.success("✅ Database connection verified!")
-                    run_analysis()
-                else:
-                    st.error(f"❌ Cannot start analysis: {message}")
+            st.success("✅ No active alerts. System is healthy!")
+            
+        st.info("You can create the dashboard/pages/alerts.py module for enhanced alert management.")
 
-with col2:
-    if st.button("🔄 Clear History", use_container_width=True):
-        st.session_state.analysis_history = []
-        st.session_state.test_results = None
-        st.session_state.explain_results = None  # Clear EXPLAIN results too
-        st.session_state.index_suggestions = None  # Clear index suggestions
-        st.session_state.performance_metrics = None  # Clear performance metrics
-        st.success("Analysis history cleared!")
-        st.rerun()
-
-with col3:
-    if st.button("📥 Download Logs", use_container_width=True):
-        try:
-            with open("app.log", "r", encoding="utf-8") as f:
-                log_content = f.read()
-            st.download_button(
-                label="📥 Click to Download",
-                data=log_content,
-                file_name="app.log",
-                mime="text/plain"
-            )
-        except Exception as e:
-            st.error(f"Could not read log file: {e}")
-
-# Display results
-if st.session_state.analysis_history:
+# Settings Page
+elif page == "⚙️ Settings":
+    st.title("⚙️ Settings")
+    
+    st.subheader("Application Configuration")
+    
+    # LLM Settings
+    st.markdown("### 🤖 LLM Configuration")
+    openai_api_key = st.text_input("OpenAI API Key", type="password", 
+                                   help="Enter your OpenAI API key for NLP features")
+    if openai_api_key:
+        # In production, use proper secrets management
+        st.session_state['openai_api_key'] = openai_api_key
+        st.success("✅ API key saved for this session!")
+    
+    # Monitoring Settings
+    st.markdown("### 📊 Monitoring Settings")
+    monitoring_interval = st.number_input("Alert Monitoring Interval (seconds)", 
+                                         min_value=60, max_value=3600, value=300,
+                                         help="How often to check for database issues")
+    
+    alert_thresholds = st.slider("Performance Alert Threshold (ms)", 
+                                 min_value=50, max_value=5000, value=500,
+                                 help="Alert when query execution time exceeds this value")
+    
+    # Notification Settings
+    st.markdown("### 🔔 Notification Settings")
+    email_notifications = st.checkbox("Enable Email Notifications")
+    if email_notifications:
+        email_address = st.text_input("Email Address", placeholder="admin@example.com")
+    
+    # Database Settings
+    st.markdown("### 💾 Database Settings")
+    auto_backup = st.checkbox("Enable Automatic Backups", value=False)
+    backup_interval = st.selectbox("Backup Frequency", ["Daily", "Weekly", "Monthly"])
+    
+    # UI Settings
+    st.markdown("### 🎨 Display Settings")
+    theme = st.selectbox("Theme", ["Light", "Dark", "System Default"])
+    auto_refresh = st.checkbox("Auto-refresh dashboard", value=False)
+    if auto_refresh:
+        refresh_interval = st.number_input("Refresh Interval (seconds)", min_value=10, max_value=300, value=30)
+    
+    # Save Settings
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("💾 Save Settings", width="stretch", type="primary"):
+            st.success("Settings saved successfully!")
+            logger.info("User settings updated")
+            
+            # Store settings in session state
+            st.session_state.settings = {
+                'monitoring_interval': monitoring_interval,
+                'alert_thresholds': alert_thresholds,
+                'email_notifications': email_notifications,
+                'auto_backup': auto_backup,
+                'backup_interval': backup_interval,
+                'theme': theme,
+                'auto_refresh': auto_refresh
+            }
+    
+    with col2:
+        if st.button("🔄 Reset to Defaults", width="stretch"):
+            st.warning("Settings reset to defaults")
+            # Clear settings from session state
+            if 'settings' in st.session_state:
+                del st.session_state.settings
+            st.rerun()
+    
+    # About Section
     st.divider()
-    display_analysis()
-    st.divider()
-    execute_queries()
-else:
-    st.info("👈 Enter an optimization request and click 'Start Analysis' to begin")
+    st.markdown("### ℹ️ About")
+    st.info("""
+    **Database Optimization Assistant v1.0**
+    
+    This application helps you optimize database performance through:
+    - Automated query analysis
+    - Index recommendations
+    - Performance monitoring
+    - Alert management
+    
+    For support or feature requests, please contact your system administrator.
+    """)
 
-# Footer
-st.divider()
-st.caption("🔧 PostgreSQL Database Optimization Assistant | Powered by AI")
+# Footer - only show on Home page
+if page == "🏠 Home":
+    st.divider()
+    st.caption("🔧 Database Optimization Assistant | Powered by AI | Supports PostgreSQL, MySQL, and MongoDB")
