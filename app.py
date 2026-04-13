@@ -34,6 +34,45 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ============================================
+# DATABASE CONFIGURATION - Use Secrets on Cloud
+# ============================================
+if "DB_HOST" in st.secrets:
+    # Running on Streamlit Cloud
+    db_config = {
+        "host": st.secrets["DB_HOST"],
+        "port": int(st.secrets.get("DB_PORT", 5432)),
+        "user": st.secrets["DB_USER"],
+        "password": st.secrets["DB_PASSWORD"],
+        "database": st.secrets["DB_NAME"],
+        "ssl": st.secrets.get("DB_SSLMODE", "require") == "require",
+        "db_type": "PostgreSQL"
+    }
+    llm_config = {
+        "provider": st.secrets.get("LLM_PROVIDER", "groq"),
+        "api_key": st.secrets.get("GROQ_API_KEY", ""),
+        "model": st.secrets.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+    }
+    print("✅ Using Streamlit Cloud secrets for configuration")
+else:
+    # Running locally - use your hardcoded config
+    db_config = {
+        "host": "ep-divine-scene-anp4baya-pooler.c-6.us-east-1.aws.neon.tech",
+        "port": 5432,
+        "user": "neondb_owner",
+        "password": "npg_vxGP8FcUI7gH",
+        "database": "neondb",
+        "ssl": True,
+        "db_type": "PostgreSQL"
+    }
+    llm_config = {
+        "provider": "groq",
+        "api_key": "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",
+        "model": "llama-3.3-70b-versatile"
+    }
+    print("✅ Using local configuration")
+# ============================================
+
 # ========== AUTHENTICATION HANDLING ==========
 
 # Function to get database config from session or defaults
@@ -43,15 +82,7 @@ def get_db_config():
         return st.session_state.db_config
     else:
         # Return default config for login page
-        return {
-            "host": "ep-divine-scene-anp4baya-pooler.c-6.us-east-1.aws.neon.tech",
-            "port": 5432,
-            "user": "neondb_owner",
-            "password": "npg_vxGP8FcUI7gH",
-            "database": "neondb",
-            "ssl": True,
-            "db_type": "PostgreSQL"
-        }
+        return db_config
 
 # Check if user is authenticated
 if not st.session_state["authenticated"]:
@@ -87,15 +118,7 @@ if page == "🏠 Home":
 
 # Database configuration (use session state or defaults)
 if "db_config" not in st.session_state:
-    st.session_state.db_config = {
-        "host": "ep-divine-scene-anp4baya-pooler.c-6.us-east-1.aws.neon.tech",
-        "port": 5432,
-        "user": "neondb_owner",
-        "password": "npg_vxGP8FcUI7gH",
-        "database": "neondb",
-        "ssl": True,
-        "db_type": "PostgreSQL"
-    }
+    st.session_state.db_config = db_config.copy()
 
 db_config = st.session_state.db_config
 
@@ -337,16 +360,34 @@ def initialize_agent():
         st.stop()
 
 def initialize_llm():
-    """Initialize LLM for NLP debugging"""
+    """Initialize LLM for NLP debugging using configuration"""
     try:
-        from langchain_openai import ChatOpenAI
-        # You can configure this with environment variables or add to sidebar
-        llm = ChatOpenAI(
-            model="gpt-3.5-turbo",
-            temperature=0,
-            api_key=st.secrets.get("OPENAI_API_KEY", "")
-        )
-        return llm
+        # Use the LLM configuration from secrets or defaults
+        provider = llm_config.get("provider", "groq")
+        api_key = llm_config.get("api_key", "")
+        model = llm_config.get("model", "llama-3.3-70b-versatile")
+        
+        if provider == "groq" and api_key:
+            from langchain_groq import ChatGroq
+            llm = ChatGroq(
+                temperature=0,
+                groq_api_key=api_key,
+                model_name=model
+            )
+            logger.info(f"LLM initialized with Groq using model: {model}")
+            return llm
+        elif api_key:
+            from langchain_openai import ChatOpenAI
+            llm = ChatOpenAI(
+                model="gpt-3.5-turbo",
+                temperature=0,
+                api_key=api_key
+            )
+            logger.info("LLM initialized with OpenAI")
+            return llm
+        else:
+            logger.warning("No API key found for LLM")
+            return None
     except Exception as e:
         logger.warning(f"LLM initialization failed: {e}")
         return None
@@ -1084,7 +1125,7 @@ if page == "🏠 Home":
                             st.error(f"❌ Error generating explanation: {str(e)}")
                             logger.error(f"NLP Debugging error: {traceback.format_exc()}")
                     else:
-                        st.warning("⚠️ LLM not configured. Please set up OpenAI API key to use this feature.")
+                        st.warning("⚠️ LLM not configured. Please set up API key to use this feature.")
             else:
                 st.warning("Please enter a question about database performance")
     else:
@@ -1212,10 +1253,16 @@ elif page == "⚙️ Settings":
     
     # LLM Settings
     st.markdown("### 🤖 LLM Configuration")
-    openai_api_key = st.text_input("OpenAI API Key", type="password", 
-                                   help="Enter your OpenAI API key for NLP features")
-    if openai_api_key:
-        st.session_state['openai_api_key'] = openai_api_key
+    llm_provider = st.selectbox("LLM Provider", ["groq", "openai"], index=0)
+    llm_api_key = st.text_input("API Key", type="password", 
+                               value=llm_config.get("api_key", ""),
+                               help="Enter your API key for the selected provider")
+    llm_model = st.text_input("Model Name", 
+                             value=llm_config.get("model", "llama-3.3-70b-versatile"),
+                             help="Model to use (e.g., llama-3.3-70b-versatile for Groq, gpt-3.5-turbo for OpenAI)")
+    
+    if llm_api_key:
+        st.session_state['llm_api_key'] = llm_api_key
         st.success("✅ API key saved for this session!")
     
     # Monitoring Settings
@@ -1261,7 +1308,9 @@ elif page == "⚙️ Settings":
                 'auto_backup': auto_backup,
                 'backup_interval': backup_interval,
                 'theme': theme,
-                'auto_refresh': auto_refresh
+                'auto_refresh': auto_refresh,
+                'llm_provider': llm_provider,
+                'llm_model': llm_model
             }
     
     with col2:

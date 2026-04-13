@@ -11,7 +11,7 @@ def show_login_page(db_config):
         layout="centered"
     )
     
-    # Custom CSS
+    # Custom CSS for better styling
     st.markdown("""
         <style>
         .stApp {
@@ -21,6 +21,24 @@ def show_login_page(db_config):
             text-align: center;
             color: white;
             padding: 2rem;
+        }
+        .stButton > button {
+            width: 100%;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+        .stTextInput > div > div > input {
+            border-radius: 8px;
+        }
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 2rem;
+        }
+        .stTabs [data-baseweb="tab"] {
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+        .stAlert {
+            border-radius: 8px;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -50,46 +68,83 @@ def show_login_page(db_config):
         with col1:
             if st.button("🔓 Login", type="primary", use_container_width=True):
                 if email and password:
-                    result = auth.login(email, password)
-                    if result["success"]:
-                        st.session_state["authenticated"] = True
-                        st.session_state["user"] = result["user"]
-                        st.rerun()
-                    else:
-                        st.error(f"❌ {result['error']}")
+                    with st.spinner("Logging in..."):
+                        result = auth.login(email, password)
+                        if result["success"]:
+                            st.session_state["authenticated"] = True
+                            st.session_state["user"] = result["user"]
+                            st.success(f"✅ Welcome back, {result['user']['name']}!")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {result['error']}")
                 else:
                     st.warning("⚠️ Please enter email and password")
         
         with col2:
             if st.button("👤 Demo Login", use_container_width=True):
-                result = auth.login("admin@example.com", "admin123")
-                if result["success"]:
-                    st.session_state["authenticated"] = True
-                    st.session_state["user"] = result["user"]
-                    st.rerun()
+                with st.spinner("Logging in with demo account..."):
+                    result = auth.login("admin@example.com", "admin123")
+                    if result["success"]:
+                        st.session_state["authenticated"] = True
+                        st.session_state["user"] = result["user"]
+                        st.success("✅ Demo login successful!")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Demo login failed: {result['error']}")
         
         st.info("💡 **Demo Credentials:** admin@example.com / admin123")
+        
+        # Add password reset hint
+        st.caption("🔒 Forgot password? Contact your administrator.")
     
     with tab2:
         st.markdown("### Create New Account")
         
         name = st.text_input("👤 Full Name", placeholder="John Doe", key="reg_name")
         email = st.text_input("📧 Email", placeholder="you@example.com", key="reg_email")
-        password = st.text_input("🔒 Password", type="password", placeholder="Choose a strong password", key="reg_password")
+        password = st.text_input("🔒 Password", type="password", placeholder="Choose a strong password (min 6 characters)", key="reg_password")
         confirm_password = st.text_input("✓ Confirm Password", type="password", placeholder="Confirm your password", key="reg_confirm")
+        
+        # Password strength indicator
+        if password:
+            strength = "Weak"
+            color = "red"
+            if len(password) >= 8:
+                strength = "Good"
+                color = "orange"
+            if len(password) >= 8 and any(c.isdigit() for c in password) and any(c.isupper() for c in password):
+                strength = "Strong"
+                color = "green"
+            st.markdown(f"<span style='color:{color}'>🔐 Password strength: {strength}</span>", unsafe_allow_html=True)
         
         if st.button("📝 Register", type="primary", use_container_width=True):
             if name and email and password:
-                if password == confirm_password:
-                    result = auth.register(name, email, password)
-                    if result["success"]:
-                        st.success(f"✅ {result['message']}")
-                        st.balloons()
-                    else:
-                        st.error(f"❌ {result['error']}")
+                if len(password) < 6:
+                    st.error("❌ Password must be at least 6 characters")
+                elif password == confirm_password:
+                    with st.spinner("Creating your account..."):
+                        result = auth.register(name, email, password)
+                        if result["success"]:
+                            st.success(f"✅ {result['message']}")
+                            st.balloons()
+                            st.info("🔐 Please login with your new credentials")
+                            # Clear form by rerunning
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {result['error']}")
                 else:
                     st.error("❌ Passwords do not match")
             else:
                 st.warning("⚠️ Please fill all fields")
+    
+    # Footer
+    st.markdown("---")
+    st.markdown(
+        "<p style='text-align: center; color: gray; font-size: 0.8rem;'>"
+        "🔧 QueryPulse-AI | AI-Powered Database Performance Optimization<br>"
+        "© 2025 | Supports PostgreSQL, MySQL, and MongoDB"
+        "</p>", 
+        unsafe_allow_html=True
+    )
     
     return False
