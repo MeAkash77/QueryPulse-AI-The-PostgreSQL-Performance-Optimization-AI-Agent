@@ -37,6 +37,9 @@ def show_login_page(db_config):
             font-size: 1.2rem;
             font-weight: bold;
         }
+        .stAlert {
+            border-radius: 8px;
+        }
         </style>
     """, unsafe_allow_html=True)
     
@@ -99,7 +102,7 @@ def show_login_page(db_config):
         
         name = st.text_input("👤 Full Name", placeholder="John Doe", key="reg_name")
         email = st.text_input("📧 Email", placeholder="you@example.com", key="reg_email")
-        password = st.text_input("🔒 Password", type="password", placeholder="Choose a strong password", key="reg_password")
+        password = st.text_input("🔒 Password", type="password", placeholder="Choose a strong password (min 6 characters)", key="reg_password")
         confirm_password = st.text_input("✓ Confirm Password", type="password", placeholder="Confirm your password", key="reg_confirm")
         
         # Password strength indicator
@@ -112,18 +115,20 @@ def show_login_page(db_config):
             if len(password) >= 8 and any(c.isdigit() for c in password) and any(c.isupper() for c in password):
                 strength = "Strong"
                 color = "green"
-            st.markdown(f"<span style='color:{color}'>Password strength: {strength}</span>", unsafe_allow_html=True)
+            st.markdown(f"<span style='color:{color}'>🔐 Password strength: {strength}</span>", unsafe_allow_html=True)
         
         if st.button("📝 Register", type="primary", use_container_width=True):
             if name and email and password:
-                if password == confirm_password:
+                if len(password) < 6:
+                    st.error("❌ Password must be at least 6 characters")
+                elif password == confirm_password:
                     with st.spinner("Creating your account..."):
                         result = auth.register(name, email, password)
                         if result["success"]:
                             st.success(f"✅ {result['message']}")
                             st.balloons()
                             st.info("🔐 Please login with your new credentials")
-                            # Clear form after successful registration
+                            # Clear form by rerunning
                             st.rerun()
                         else:
                             st.error(f"❌ {result['error']}")
@@ -137,7 +142,7 @@ def show_login_page(db_config):
     st.markdown(
         "<p style='text-align: center; color: gray; font-size: 0.8rem;'>"
         "🔧 QueryPulse-AI | AI-Powered Database Performance Optimization<br>"
-        "© 2024 | Supports PostgreSQL, MySQL, and MongoDB"
+        "© 2025 | Supports PostgreSQL, MySQL, and MongoDB"
         "</p>", 
         unsafe_allow_html=True
     )
