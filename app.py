@@ -73,6 +73,13 @@ else:
     print("✅ Using local configuration")
 # ============================================
 
+# ============================================
+# INITIALIZE AUTH SYSTEM (ADD THIS HERE)
+# ============================================
+from auth.auth_system import AuthSystem
+auth = AuthSystem(db_config)
+# ============================================
+
 # ========== AUTHENTICATION HANDLING ==========
 
 # Function to get database config from session or defaults
@@ -1201,49 +1208,51 @@ elif page == "🔔 Alerts":
 
 # Users Management Page
 elif page == "👥 Users":
-    try:
-        # Import the admin users functions
-        from dashboard.pages.admin_users import show_admin_users, show_login_activity
-        show_admin_users(auth)
-        st.divider()
-        show_login_activity(auth)
-    except ImportError:
-        st.error("❌ Admin users module not found. Please ensure dashboard/pages/admin_users.py exists.")
-        
-        # Provide fallback user management view
-        st.subheader("👥 User Management")
-        
-        # Display current user info
-        if st.session_state.get("authenticated"):
-            user = st.session_state.get("user", {})
-            st.info(f"**Current User:** {user.get('email', 'Unknown')}")
-            st.info(f"**Role:** {user.get('role', 'viewer')}")
-        
-        st.markdown("---")
-        
-        # Fallback user list (read-only)
-        st.subheader("System Users")
-        st.info("User management features will be available when the admin_users module is created.")
-        
-        # Simple user info display
-        users_data = [
-            {"email": "admin@example.com", "role": "admin", "status": "active"},
-            {"email": "user@example.com", "role": "viewer", "status": "active"}
-        ]
-        
-        st.table(users_data)
-        
-        st.info("""
-        **To enable full user management:**
-        1. Create `dashboard/pages/admin_users.py` with the following functions:
-           - `show_admin_users(auth)` - Display user management interface
-           - `show_login_activity(auth)` - Display login activity log
-        2. Ensure proper authentication is implemented
-        """)
-        
-    except Exception as e:
-        st.error(f"❌ Users page error: {str(e)}")
-        logger.error(f"Users page error: {traceback.format_exc()}")
+    # Check if user is admin
+    if st.session_state.get("user", {}).get("role") == "admin":
+        try:
+            # Import the admin users functions
+            from dashboard.pages.admin_users import show_admin_users, show_login_activity
+            show_admin_users(auth)
+            st.divider()
+            show_login_activity(auth)
+        except ImportError:
+            st.error("❌ Admin users module not found. Please ensure dashboard/pages/admin_users.py exists.")
+            
+            # Provide fallback user management view
+            st.subheader("👥 User Management")
+            
+            # Display current user info
+            if st.session_state.get("authenticated"):
+                user = st.session_state.get("user", {})
+                st.info(f"**Current User:** {user.get('email', 'Unknown')}")
+                st.info(f"**Role:** {user.get('role', 'viewer')}")
+            
+            st.markdown("---")
+            
+            # Get all users from auth system
+            users = auth.get_all_users()
+            if users:
+                st.subheader("All Users")
+                for user in users:
+                    with st.container():
+                        st.markdown(f"**{user.get('name', 'No name')}** ({user.get('email')})")
+                        st.caption(f"Role: {user.get('role')} | Created: {user.get('created_at')}")
+                        st.divider()
+            else:
+                st.info("No users found.")
+            
+            st.info("""
+            **To enable full user management:**
+            1. Create `dashboard/pages/admin_users.py` with the following functions:
+               - `show_admin_users(auth)` - Display user management interface
+               - `show_login_activity(auth)` - Display login activity log
+            2. Ensure proper authentication is implemented
+            """)
+            
+    else:
+        st.error("❌ Access denied. Admin privileges required to view this page.")
+        st.info("Please contact your system administrator for access.")
 
 # Settings Page
 elif page == "⚙️ Settings":
