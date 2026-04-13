@@ -184,8 +184,8 @@ QueryPulse-AI is an intelligent, AI-powered database performance optimization sy
 
 ```bash
 # Clone the repository
-git clone https://github.com/MeAkash77/QueryPulse-AI-Real-Time-Database-Performance-Analyzer-for-PostgreSQL.git
-cd QueryPulse-AI-Real-Time-Database-Performance-Analyzer-for-PostgreSQL
+git clone https://github.com/MeAkash77/QueryPulse-AI-The-PostgreSQL-Performance-Optimization-AI-Agent.git
+cd QueryPulse-AI-The-PostgreSQL-Performance-Optimization-AI-Agent
 
 # Create and activate virtual environment
 python -m venv venv
