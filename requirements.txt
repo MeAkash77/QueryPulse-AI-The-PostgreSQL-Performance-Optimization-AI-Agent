@@ -1,0 +1,12 @@
+langchain_core
+langchain_groq
+langgraph
+langgraph_supervisor
+langchain_ollama
+dotenv
+psycopg2-binary
+langchain
+# langgraph_checkpoints
+ipython
+typing_extensions
+streamlit
