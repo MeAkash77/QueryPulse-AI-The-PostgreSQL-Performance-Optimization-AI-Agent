@@ -78,7 +78,7 @@ if st.session_state.get("authenticated"):
 st.sidebar.title("Navigation")
 page = st.sidebar.radio(
     "Go to",
-    ["🏠 Home", "📊 Performance", "🔔 Alerts", "⚙️ Settings"]
+    ["🏠 Home", "📊 Performance", "🔔 Alerts", "👥 Users", "⚙️ Settings"]
 )
 
 # Main title - only show on Home page
@@ -183,6 +183,10 @@ with st.sidebar:
     elif page == "🔔 Alerts":
         st.header("Alert Center")
         st.info("System alerts and notifications will appear here")
+    
+    elif page == "👥 Users":
+        st.header("User Management")
+        st.info("User management interface will appear here")
     
     elif page == "⚙️ Settings":
         st.header("Settings")
@@ -1153,6 +1157,52 @@ elif page == "🔔 Alerts":
             st.success("✅ No active alerts. System is healthy!")
             
         st.info("You can create the dashboard/pages/alerts.py module for enhanced alert management.")
+
+# Users Management Page
+elif page == "👥 Users":
+    try:
+        # Import the admin users functions
+        from dashboard.pages.admin_users import show_admin_users, show_login_activity
+        show_admin_users(auth)
+        st.divider()
+        show_login_activity(auth)
+    except ImportError:
+        st.error("❌ Admin users module not found. Please ensure dashboard/pages/admin_users.py exists.")
+        
+        # Provide fallback user management view
+        st.subheader("👥 User Management")
+        
+        # Display current user info
+        if st.session_state.get("authenticated"):
+            user = st.session_state.get("user", {})
+            st.info(f"**Current User:** {user.get('email', 'Unknown')}")
+            st.info(f"**Role:** {user.get('role', 'viewer')}")
+        
+        st.markdown("---")
+        
+        # Fallback user list (read-only)
+        st.subheader("System Users")
+        st.info("User management features will be available when the admin_users module is created.")
+        
+        # Simple user info display
+        users_data = [
+            {"email": "admin@example.com", "role": "admin", "status": "active"},
+            {"email": "user@example.com", "role": "viewer", "status": "active"}
+        ]
+        
+        st.table(users_data)
+        
+        st.info("""
+        **To enable full user management:**
+        1. Create `dashboard/pages/admin_users.py` with the following functions:
+           - `show_admin_users(auth)` - Display user management interface
+           - `show_login_activity(auth)` - Display login activity log
+        2. Ensure proper authentication is implemented
+        """)
+        
+    except Exception as e:
+        st.error(f"❌ Users page error: {str(e)}")
+        logger.error(f"Users page error: {traceback.format_exc()}")
 
 # Settings Page
 elif page == "⚙️ Settings":

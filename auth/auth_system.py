@@ -52,6 +52,30 @@ class AuthSystem:
                 """, ("admin@example.com", "Administrator", password_hash, salt))
                 print("✅ Admin user created (admin@example.com / admin123)")
             
+            # Create login_activity table
+            activity_result = agent.execute_query("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'login_activity'
+                )
+            """)
+            
+            activity_exists = activity_result[0]['exists'] if activity_result else False
+            
+            if not activity_exists:
+                agent.execute_query("""
+                    CREATE TABLE login_activity (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                        email TEXT,
+                        login_time TIMESTAMP DEFAULT NOW(),
+                        ip_address TEXT,
+                        user_agent TEXT,
+                        status TEXT
+                    )
+                """)
+                print("✅ Login activity table created")
+            
             return True
         except Exception as e:
             print(f"Table creation error: {e}")
@@ -102,16 +126,21 @@ class AuthSystem:
             """, (email,))
             
             if not result:
+                # Log failed login attempt
+                self._log_activity(None, email, None, None, "failed")
                 return {"success": False, "error": "User not found"}
             
             user = result[0]
             
             if self.verify_password(password, user['password_hash'], user['salt']):
-                # Update last login
+                # Update last login timestamp
                 agent.execute_query("""
                     UPDATE users SET last_login = NOW() 
                     WHERE email = %s
                 """, (email,))
+                
+                # Log successful login
+                self._log_activity(user['id'], email, None, None, "success")
                 
                 return {
                     "success": True,
@@ -123,6 +152,107 @@ class AuthSystem:
                     }
                 }
             else:
+                # Log failed login attempt
+                self._log_activity(user['id'], email, None, None, "failed")
                 return {"success": False, "error": "Invalid password"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def _log_activity(self, user_id, email, ip_address=None, user_agent=None, status="success"):
+        """Log login activity"""
+        try:
+            agent = SQLAgent(self.db_config)
+            agent.execute_query("""
+                INSERT INTO login_activity (user_id, email, ip_address, user_agent, status)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (user_id, email, ip_address, user_agent, status))
+        except Exception as e:
+            print(f"Failed to log activity: {e}")
+    
+    def get_login_activity(self, limit=50):
+        """Get recent login activity"""
+        try:
+            agent = SQLAgent(self.db_config)
+            result = agent.execute_query("""
+                SELECT 
+                    la.id,
+                    la.email,
+                    la.login_time,
+                    la.ip_address,
+                    la.user_agent,
+                    la.status,
+                    u.name as user_name
+                FROM login_activity la
+                LEFT JOIN users u ON la.user_id = u.id
+                ORDER BY la.login_time DESC
+                LIMIT %s
+            """, (limit,))
+            return result
+        except Exception as e:
+            print(f"Failed to get login activity: {e}")
+            return []
+    
+    def get_all_users(self):
+        """Get all users"""
+        try:
+            agent = SQLAgent(self.db_config)
+            result = agent.execute_query("""
+                SELECT id, email, name, role, created_at, last_login
+                FROM users
+                ORDER BY created_at DESC
+            """)
+            return result
+        except Exception as e:
+            print(f"Failed to get users: {e}")
+            return []
+    
+    def update_user_role(self, user_id, new_role):
+        """Update user role"""
+        try:
+            agent = SQLAgent(self.db_config)
+            agent.execute_query("""
+                UPDATE users SET role = %s
+                WHERE id = %s
+            """, (new_role, user_id))
+            return {"success": True, "message": "User role updated"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def delete_user(self, user_id):
+        """Delete a user"""
+        try:
+            agent = SQLAgent(self.db_config)
+            agent.execute_query("DELETE FROM users WHERE id = %s", (user_id,))
+            return {"success": True, "message": "User deleted successfully"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def change_password(self, user_id, old_password, new_password):
+        """Change user password"""
+        try:
+            agent = SQLAgent(self.db_config)
+            
+            # Get current user
+            result = agent.execute_query("""
+                SELECT password_hash, salt FROM users WHERE id = %s
+            """, (user_id,))
+            
+            if not result:
+                return {"success": False, "error": "User not found"}
+            
+            user = result[0]
+            
+            # Verify old password
+            if not self.verify_password(old_password, user['password_hash'], user['salt']):
+                return {"success": False, "error": "Current password is incorrect"}
+            
+            # Update to new password
+            new_hash, new_salt = self.hash_password(new_password)
+            agent.execute_query("""
+                UPDATE users SET password_hash = %s, salt = %s
+                WHERE id = %s
+            """, (new_hash, new_salt, user_id))
+            
+            return {"success": True, "message": "Password changed successfully"}
         except Exception as e:
             return {"success": False, "error": str(e)}
