@@ -137,6 +137,8 @@ class AuthSystem:
             """, (email,))
             
             if not result:
+                # Log failed login attempt
+                self._log_activity(None, email, None, None, "failed")
                 return {"success": False, "error": "User not found"}
             
             user = result[0]
@@ -148,6 +150,9 @@ class AuthSystem:
                     WHERE email = %s
                 """, (email,))
                 
+                # Log successful login
+                self._log_activity(user['id'], email, None, None, "success")
+                
                 return {
                     "success": True,
                     "user": {
@@ -158,9 +163,45 @@ class AuthSystem:
                     }
                 }
             else:
+                # Log failed login attempt
+                self._log_activity(user['id'], email, None, None, "failed")
                 return {"success": False, "error": "Invalid password"}
         except Exception as e:
             return {"success": False, "error": str(e)}
+    
+    def _log_activity(self, user_id, email, ip_address=None, user_agent=None, status="success"):
+        """Log login activity"""
+        try:
+            agent = SQLAgent(self.db_config)
+            agent.execute_query("""
+                INSERT INTO login_activity (user_id, email, ip_address, user_agent, status)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (user_id, email, ip_address, user_agent, status))
+        except Exception as e:
+            print(f"Failed to log activity: {e}")
+    
+    def get_login_activity(self, limit=100):
+        """Get recent login activity"""
+        try:
+            agent = SQLAgent(self.db_config)
+            result = agent.execute_query("""
+                SELECT 
+                    la.id,
+                    la.email,
+                    la.login_time,
+                    la.ip_address,
+                    la.user_agent,
+                    la.status,
+                    u.name as user_name
+                FROM login_activity la
+                LEFT JOIN users u ON la.user_id = u.id
+                ORDER BY la.login_time DESC
+                LIMIT %s
+            """, (limit,))
+            return result
+        except Exception as e:
+            print(f"Failed to get login activity: {e}")
+            return []
     
     def change_password(self, email, old_password, new_password):
         """Change user password"""
